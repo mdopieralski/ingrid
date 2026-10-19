@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/docs/openapi.yaml dist/docs/ && node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/build-static.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/docs/openapi.yaml dist/docs/",
     "cache:clean": "rm -rf node_modules && echo 'Caches cleared. Run pnpm install to reinstall.'",
     "commitlint": "commitlint --edit",
     "docs:lint": "pnpm --package=@redocly/cli@2.3.0 dlx redocly lint src/docs/openapi.yaml",
@@ -35,7 +35,6 @@
     "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
-    "@types/swagger-ui-dist": "^3.30.6",
     "ajv": "^8.20.0",
     "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",

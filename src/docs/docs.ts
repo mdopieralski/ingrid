@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
-import express, { Router } from 'express';
-import { getAbsoluteFSPath } from 'swagger-ui-dist';
+import { createRequire } from 'node:module';
+import { Router } from 'express';
 import { parse } from 'yaml';
+
+const require = createRequire(import.meta.url);
 
 // The parts of the spec this module and the tests read; the rest is passed through.
 export interface OpenApiSpec {
@@ -38,19 +40,24 @@ export function loadSpec(): OpenApiSpec {
 }
 
 // Swagger UI's own files live under /swagger-ui/, so they never clash with API routes.
-export const ASSETS_PATH = '/swagger-ui';
+const ASSETS_PATH = '/swagger-ui';
 
-// The swagger-ui-dist files the page loads. Locally they are served from
-// node_modules by express.static. Vercel ignores express.static, so `pnpm build`
-// also copies these into public/swagger-ui/, which Vercel serves from its CDN.
-export const SWAGGER_ASSETS = [
-  'swagger-ui.css',
-  'favicon-32x32.png',
-  'swagger-ui-bundle.js',
-  'swagger-ui-standalone-preset.js',
-] as const;
+// The swagger-ui-dist files the page loads, served by name from this list only.
+// Not express.static over the package: Vercel ignores express.static, and its
+// file tracing bundles only files it can see referenced. One literal
+// require.resolve() per file is a reference it follows, so these four files are
+// in the deployed function and served the same way locally and on Vercel.
+const SWAGGER_FILES = {
+  'swagger-ui.css': require.resolve('swagger-ui-dist/swagger-ui.css'),
+  'favicon-32x32.png': require.resolve('swagger-ui-dist/favicon-32x32.png'),
+  'swagger-ui-bundle.js': require.resolve('swagger-ui-dist/swagger-ui-bundle.js'),
+  'swagger-ui-standalone-preset.js':
+    require.resolve('swagger-ui-dist/swagger-ui-standalone-preset.js'),
+} as const;
 
-const asset = (name: (typeof SWAGGER_ASSETS)[number]): string => `${ASSETS_PATH}/${name}`;
+type SwaggerFile = keyof typeof SWAGGER_FILES;
+const isSwaggerFile = (name: string): name is SwaggerFile => Object.hasOwn(SWAGGER_FILES, name);
+const asset = (name: SwaggerFile): string => `${ASSETS_PATH}/${name}`;
 
 const page = (title: string): string => `<!doctype html>
 <html lang="en">
@@ -87,7 +94,13 @@ export function createDocsRouter(): Router {
 
   router.get(['/docs', '/docs/'], (_req, res) => res.type('html').send(html));
   router.get('/openapi.json', (_req, res) => res.json(spec));
-  router.use(ASSETS_PATH, express.static(getAbsoluteFSPath(), { index: false }));
+  router.get(`${ASSETS_PATH}/:file`, (req, res, next) => {
+    const { file } = req.params;
+    if (!isSwaggerFile(file)) return next();
+    // dotfiles: pnpm keeps packages under node_modules/.pnpm/, which send() would
+    // otherwise refuse. Safe here: the path comes from SWAGGER_FILES, never the request.
+    res.sendFile(SWAGGER_FILES[file], { maxAge: '1d', dotfiles: 'allow' });
+  });
 
   return router;
 }
