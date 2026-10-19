@@ -1,0 +1,11 @@
+{
+  // `pnpm build`: src/ → dist/, for `pnpm start`. Tests are not compiled.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}

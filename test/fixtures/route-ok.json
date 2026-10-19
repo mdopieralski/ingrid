@@ -1,0 +1,28 @@
+{
+  "code": "Ok",
+  "routes": [
+    {
+      "legs": [
+        { "steps": [], "weight": 262.7, "summary": "", "duration": 260.4, "distance": 1888 }
+      ],
+      "weight_name": "routability",
+      "weight": 262.7,
+      "duration": 260.4,
+      "distance": 1888
+    }
+  ],
+  "waypoints": [
+    {
+      "hint": "KAEKgGNin4ULAAAAAwAAAAAAAAAPAAAAuFtKQYXNK0AAAAAAIMuBQQsAAAADAAAAAAAAAA8AAAD0KAEAFEzMAKpYIQM8TMwArVghAwAA3woAAAAA",
+      "location": [13.38882, 52.517034],
+      "name": "Friedrichstraße",
+      "distance": 2.73531597
+    },
+    {
+      "hint": "il7fgUeekYcGAAAACQAAAAAAAABeAAAAz-ONQIv-tkAAAAAAeYZHQgYAAAAJAAAAAAAAAF4AAAD0KAEAfm7MABmJIQOCbswA_4ghAwAATwUAAAAA",
+      "location": [13.39763, 52.529433],
+      "name": "Torstraße",
+      "distance": 2.905919634
+    }
+  ]
+}
