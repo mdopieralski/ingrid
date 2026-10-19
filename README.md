@@ -67,6 +67,7 @@ Full reset: `pnpm cache:clean && pnpm install && pnpm start:dev`.
 | App                                                  | Tools                                                     |
 | ---------------------------------------------------- | --------------------------------------------------------- |
 | [Node.js](https://nodejs.org/docs/latest-v22.x/api/) | [pnpm](https://pnpm.io/)                                  |
+| [TypeScript](https://www.typescriptlang.org/)        | [typescript-eslint](https://typescript-eslint.io/)        |
 | [Express](https://expressjs.com/)                    | [ESLint](https://eslint.org/)                             |
 | [OSRM](https://project-osrm.org/docs/v5.24.0/api/)   | [Prettier](https://prettier.io/)                          |
 |                                                      | [Husky](https://typicode.github.io/husky/)                |
@@ -75,7 +76,16 @@ Full reset: `pnpm cache:clean && pnpm install && pnpm start:dev`.
 |                                                      | [GitHub Actions](https://docs.github.com/actions)         |
 | [Swagger UI](https://swagger.io/tools/swagger-ui/)   | [Portless](https://github.com/vercel-labs/portless)       |
 
-Runtime: **Node 22.15.1** (`.nvmrc`). Plain JavaScript, ES modules, no build step. Dev mode uses Node's built-in `--watch` — no nodemon.
+Runtime: **Node 22.15.1** (`.nvmrc`). **TypeScript** (strict), ES modules. Dev mode uses Node's built-in `--watch` — no nodemon.
+
+**How TypeScript runs.** One set of `.ts` files, two ways to run them:
+
+- **Development and tests** run the `.ts` files directly, using Node's built-in type stripping (`--experimental-strip-types`). Nothing is compiled, and there is no loader dependency such as `tsx` or `ts-node`. On Node 22.15 the feature is behind a flag and prints an experimental warning, which the scripts silence with `--disable-warning=ExperimentalWarning`.
+- **Production** runs plain JavaScript: `pnpm build` compiles `src/` to `dist/` with `tsc`, and `pnpm start` runs `dist/index.js`. No experimental flag runs in production.
+- **Same code both ways:** `tsconfig.json` sets `erasableSyntaxOnly`, so the code uses only syntax Node can strip (no `enum`, no namespaces with runtime code, no parameter properties). Imports use `.ts` paths, which `tsc` rewrites to `.js` when it emits (`rewriteRelativeImportExtensions`).
+- **Type-checking is a separate step:** type stripping removes types without checking them. `pnpm typecheck` (`tsc --noEmit`) checks `src/` and `test/`, and CI and the pre-push hook run it.
+
+TypeScript is pinned to `~6.0`: typescript-eslint, which runs the type-aware lint rules, does not support TypeScript 6.1+ or the native TypeScript 7 yet. Dependabot is told to hold it there.
 
 ---
 
@@ -83,38 +93,44 @@ Runtime: **Node 22.15.1** (`.nvmrc`). Plain JavaScript, ES modules, no build ste
 
 Single Express 5 app. Routes validate input and shape the response; anything that talks to the outside world lives in `src/services`; small pure helpers live in `src/utils`.
 
-`index.js` only starts the process; `app.js` exports `createApp(options)`, so tests boot the whole app on a random port with injected config and no process-level state.
+`index.ts` only starts the process; `app.ts` exports `createApp(options)`, so tests boot the whole app on a random port with injected config and no process-level state.
 
 ### Structure
 
 ```
 src/
-  index.js               — process entry: reads env, starts the server
-  app.js                 — composition root: config, request context, routes, error handler
-  routes/routes.js       — GET /routes: validation, fan-out, sorting, RoutingError → status
-  services/osrm.js       — OSRM client: error taxonomy, retries, 4 s per attempt
-  utils/coordinates.js   — "lng,lat" parsing and range checks
-  utils/concurrency.js   — bounded parallel map (5 in flight)
-  utils/logger.js        — one JSON object per line
+  index.ts               — process entry: reads env, starts the server
+  app.ts                 — composition root: config, request context, routes, error handler
+  routes/routes.ts       — GET /routes: validation, fan-out, sorting, RoutingError → status
+  services/osrm.ts       — OSRM client: error taxonomy, retries, 4 s per attempt
+  utils/coordinates.ts   — "lng,lat" parsing and range checks
+  utils/concurrency.ts   — bounded parallel map (5 in flight)
+  utils/logger.ts        — one JSON object per line
   docs/openapi.yaml      — OpenAPI 3.1 spec, the source of the API docs
-  docs/docs.js           — Swagger UI at /docs, the spec at /openapi.json
+  docs/docs.ts           — Swagger UI at /docs, the spec at /openapi.json
 
 test/
-  contract.test.js       — A. contract & happy path
-  validation.test.js     — B. input validation
-  upstream.test.js       — C. upstream behaviour
-  resilience.test.js     — D. retries, concurrency, deadline
-  operational.test.js    — E. health, logs, cancellation
-  docs.test.js           — F. the spec matches real responses
-  integration.test.js    — the one test against the real OSRM (skipped by default)
+  contract.test.ts       — A. contract & happy path
+  validation.test.ts     — B. input validation
+  upstream.test.ts       — C. upstream behaviour
+  resilience.test.ts     — D. retries, concurrency, deadline
+  operational.test.ts    — E. health, logs, cancellation
+  docs.test.ts           — F. the spec matches real responses
+  readme.test.ts         — the Scripts table below matches package.json
+  integration.test.ts    — the one test against the real OSRM (skipped by default)
   fixtures/              — real OSRM payloads
   helpers/               — app and OSRM-stub boot
+
+dist/                    — `pnpm build` output (git-ignored)
+
+tsconfig.json            — type-check settings for src/ and test/ (no output)
+tsconfig.build.json      — build settings: src/ → dist/
 
 docs/
   RELEASE_MANAGER.md     — branch flow (feature → scope → release → main) and release checklist
 
 .github/
-  workflows/ci.yml          — Prettier, ESLint, spec lint, tests, commit messages; on every push and PR
+  workflows/ci.yml          — Prettier, ESLint, typecheck, build, spec lint, tests, commit messages
   workflows/integration.yml — the live OSRM test, daily and on demand
   actions/setup/            — shared step: pnpm, Node from .nvmrc, cached install
   dependabot.yml            — weekly grouped updates for npm and actions
@@ -122,7 +138,7 @@ docs/
 .husky/
   commit-msg             — Commitlint (Conventional Commits)
   pre-commit             — lint-staged: Prettier + ESLint --fix on staged files
-  pre-push               — `pnpm standard` over the whole repo
+  pre-push               — `pnpm standard` and `pnpm typecheck` over the whole repo
 ```
 
 ---
@@ -216,15 +232,16 @@ Everyday commands from `package.json` — `pnpm run` is authoritative.
 | Name                                      | Description                                                                                                        |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `start:dev`                               | Dev server at `https://ingrid.local` (API) and `/docs` (Swagger) via Portless; restarts on any change under `src/` |
-| `start`                                   | Production-style start: `node src/index.js` with `.env` loaded, no watch, no Portless — `http://localhost:3000`    |
+| `build`                                   | Compile `src/` to `dist/` with `tsc` and copy `openapi.yaml` next to the compiled docs module                      |
+| `start`                                   | Production start: `node dist/index.js` (run `build` first), `.env` loaded, no watch — `http://localhost:3000`      |
+| `typecheck`                               | `tsc --noEmit` over `src/` and `test/`; Node's type stripping does not check types, this does                      |
 | `test`                                    | Every test file, offline, against a local OSRM stub; the integration test is skipped                               |
 | `test:ci`                                 | Same tests as `test`, printing readable output and writing JUnit results to `junit.xml` (used by CI)               |
-| `test:ci`                                 | `test`, plus a JUnit report in `junit.xml` (what CI runs)                                                          |
 | `test:integration`                        | The one test that calls the real OSRM (`OSRM_URL` or the public demo server)                                       |
 | `cache:clean`                             | Remove `node_modules`; run `pnpm install` afterwards                                                               |
 | `standard` / `standard:fix`               | Prettier + ESLint — check or apply                                                                                 |
 | `standard:format` / `standard:format:fix` | Prettier only — check or apply                                                                                     |
-| `standard:lint` / `standard:lint:fix`     | ESLint only — check or apply                                                                                       |
+| `standard:lint` / `standard:lint:fix`     | ESLint (with type-aware typescript-eslint rules) only — check or apply                                             |
 | `docs:lint`                               | Lint `src/docs/openapi.yaml` with Redocly (rules in `redocly.yaml`)                                                |
 | `commitlint`                              | Lint the commit message (run by the `commit-msg` hook)                                                             |
 | `prepare`                                 | Install the Husky git hooks (runs automatically on `pnpm install`)                                                 |
@@ -233,7 +250,7 @@ Git hooks (Husky) run on every commit and push:
 
 - `commit-msg` — the message must follow [Conventional Commits](https://www.conventionalcommits.org/), e.g. `feat(routes): sort by distance on equal duration`
 - `pre-commit` — lint-staged formats and lint-fixes staged files; a remaining ESLint error blocks the commit
-- `pre-push` — `pnpm standard`; skip with `git push --no-verify` when you've checked manually
+- `pre-push` — `pnpm standard` and `pnpm typecheck`; skip with `git push --no-verify` when you've checked manually
 
 ---
 
@@ -259,26 +276,29 @@ Built on `node:test`; the only test dependency is `ajv`, which group F uses to v
 
 | File                  | Group                    | Proves                                                                        |
 | --------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| `contract.test.js`    | A. Contract & happy path | exact body shape, duration-then-distance sort, client coordinates echoed back |
-| `validation.test.js`  | B. Input validation      | each bad input → 400 **and** zero OSRM calls; the 100-destination cap         |
-| `upstream.test.js`    | C. Upstream behaviour    | every OSRM failure → the right status; nothing about OSRM leaks to the client |
-| `resilience.test.js`  | D. Resilience            | retry counts, bounded attempts, concurrency cap, per-request deadline         |
-| `operational.test.js` | E. Operational surface   | `/health` is offline, one structured log line, no coordinates in logs, cancel |
-| `docs.test.js`        | F. API docs              | every real response matches the spec: schemas, statuses, headers, messages    |
-| `integration.test.js` | live contract (skipped)  | the brief's request works against the real OSRM                               |
+| `contract.test.ts`    | A. Contract & happy path | exact body shape, duration-then-distance sort, client coordinates echoed back |
+| `validation.test.ts`  | B. Input validation      | each bad input → 400 **and** zero OSRM calls; the 100-destination cap         |
+| `upstream.test.ts`    | C. Upstream behaviour    | every OSRM failure → the right status; nothing about OSRM leaks to the client |
+| `resilience.test.ts`  | D. Resilience            | retry counts, bounded attempts, concurrency cap, per-request deadline         |
+| `operational.test.ts` | E. Operational surface   | `/health` is offline, one structured log line, no coordinates in logs, cancel |
+| `docs.test.ts`        | F. API docs              | every real response matches the spec: schemas, statuses, headers, messages    |
+| `readme.test.ts`      | README                   | every `package.json` script is in the Scripts table, and nothing else is      |
+| `integration.test.ts` | live contract (skipped)  | the brief's request works against the real OSRM                               |
 
 ### CI
 
 The Husky hooks run these checks locally, but a hook can be skipped with `--no-verify`. CI is the gate that cannot be skipped. `.github/workflows/ci.yml` runs on every push to `main`, every pull request and on demand. It uses the Node version from `.nvmrc` and the lockfile as-is (`--frozen-lockfile`). Each check is its own job and they run in parallel, so the PR shows which one broke:
 
-| Job               | Runs                                     | Notes                                                     |
-| ----------------- | ---------------------------------------- | --------------------------------------------------------- |
-| `Prettier`        | `pnpm standard:format`                   |                                                           |
-| `ESLint`          | `pnpm standard:lint`                     | errors are annotated inline on the PR diff                |
-| `OpenAPI spec`    | `pnpm docs:lint`                         |                                                           |
-| `Tests`           | `pnpm test:ci`                           | JUnit report kept as the `junit-report` artifact, 14 days |
-| `Commit messages` | `commitlint` over the PR's commits       | PRs only; skipped for Dependabot                          |
-| `CI passed`       | fails if any job above failed or stopped | **the one check to mark required in branch protection**   |
+| Job               | Runs                                         | Notes                                                          |
+| ----------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| `Prettier`        | `pnpm standard:format`                       |                                                                |
+| `ESLint`          | `pnpm standard:lint`                         | errors are annotated inline on the PR diff                     |
+| `Typecheck`       | `pnpm typecheck`                             |                                                                |
+| `Build`           | `pnpm build`, then start `dist/` and call it | catches what type-checking cannot: a file missing from `dist/` |
+| `OpenAPI spec`    | `pnpm docs:lint`                             |                                                                |
+| `Tests`           | `pnpm test:ci`                               | JUnit report kept as the `junit-report` artifact, 14 days      |
+| `Commit messages` | `commitlint` over the PR's commits           | PRs only; skipped for Dependabot                               |
+| `CI passed`       | fails if any job above failed or stopped     | **the one check to mark required in branch protection**        |
 
 - **Reproduce locally:** every job is one `pnpm` script, so a failure can be reproduced with the same command.
 - **Superseded runs:** a new push to a PR cancels that PR's run already in progress. Runs on `main` always finish.

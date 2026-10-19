@@ -1,6 +1,6 @@
 # OSRM fixtures
 
-Real responses from `router.project-osrm.org`, captured 2026-10-19 and saved unedited. Tests that need other numbers clone `route-ok.json` and change only `duration`/`distance` (see `test/helpers/fixtures.js`).
+Real responses from `router.project-osrm.org`, captured 2026-10-19 and saved unedited. Tests that need other numbers clone `route-ok.json` and change only `duration`/`distance` (see `test/helpers/fixtures.ts`).
 
 | File                         | Request (`/route/v1/driving/…?overview=false`)               | HTTP |
 | ---------------------------- | ------------------------------------------------------------ | ---- |
