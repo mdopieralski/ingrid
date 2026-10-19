@@ -1,0 +1,5 @@
+# Fast local safety net: Prettier, ESLint and the type-check over the whole repo,
+# so a formatting, lint or type error fails the push in seconds.
+# Skip with `git push --no-verify` when you've checked manually.
+
+pnpm standard && pnpm typecheck

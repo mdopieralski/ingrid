@@ -1,0 +1,8 @@
+extends:
+  - recommended
+
+rules:
+  # `/` and `/health` take no input and cannot return a 4xx; inventing one would be wrong.
+  operation-4xx-response: off
+  # Private, unlicensed project: there is no license to point to.
+  info-license: off
