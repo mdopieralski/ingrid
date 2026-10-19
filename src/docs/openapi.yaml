@@ -1,0 +1,370 @@
+openapi: 3.1.0
+
+info:
+  title: ingrid routes
+  version: 1.0.0 # replaced at load time with the version from package.json
+  summary: Driving time and distance from one source to many destinations.
+  description: |
+    Give the service one source and up to 100 destinations. It asks
+    [OSRM](https://project-osrm.org/) for the fastest driving route to each one and
+    returns them **fastest first**, with shorter distance breaking ties.
+
+    ### Coordinates
+    Every coordinate is `longitude,latitude`, the order OSRM uses, as plain decimals
+    (`13.388860,52.517037` is Berlin). Hex, exponents and `Infinity` are rejected.
+    A swapped `lat,lon` pair is usually still a legal point somewhere else, so it
+    cannot be detected: it is routed as given.
+
+    ### How a request is handled
+    - All input is validated before OSRM is called; an invalid request never reaches it.
+    - A repeated `dst` is routed once and listed once.
+    - Up to 5 OSRM calls run in parallel per request.
+    - Each OSRM call has a 4 s timeout. Transient failures (5xx, timeout, connection
+      error) are retried once; 4xx and rate limits are not.
+    - The whole request has a 10 s deadline, shared by every destination and retry.
+    - **Partial failure fails the whole request.** If any destination still fails after
+      its retry, the response is a single 5xx with no routes. A destination that no
+      road reaches is not a failure: it is listed under `unroutable`.
+
+    ### Request IDs
+    Every response carries `X-Request-Id`. Send your own to correlate logs; it is
+    reused if it matches `^[\w.-]{1,128}$`, otherwise a new UUID is generated.
+
+    ### Errors
+    Every error body is `{ "error": "<message>" }`. 5xx messages are fixed strings;
+    upstream detail is logged server-side and never returned.
+
+    ### Scope
+    This spec covers the API. The documentation surface it is served from —
+    `/docs`, `/openapi.json` and `/swagger-ui/*` — is deliberately left out of the
+    contract: it exists for humans, and may move or be switched off without a
+    version change.
+
+# No authentication: every endpoint is public.
+security: []
+
+servers:
+  - url: /
+    description: This server
+
+tags:
+  - name: Routes
+    description: Driving routes from one source to many destinations.
+  - name: Service
+    description: Liveness and discovery. These never call OSRM.
+
+paths:
+  /routes:
+    get:
+      tags: [Routes]
+      operationId: getRoutes
+      summary: Driving routes from one source to many destinations
+      description: |
+        Returns the fastest driving route from `src` to each `dst`, sorted by
+        `duration` ascending, then `distance` ascending.
+
+        Repeat `dst` once per destination: `?src=…&dst=…&dst=…`.
+        The bracket form `dst[]=` is not supported.
+
+        Coordinates in the response are the ones you sent (trimmed), not the
+        points OSRM snapped to the road network.
+      parameters:
+        - $ref: '#/components/parameters/Src'
+        - $ref: '#/components/parameters/Dst'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: |
+            Every destination was routed or found unroutable. `routes` may be empty
+            when every destination is unroutable.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutesResponse'
+              examples:
+                twoDestinations:
+                  summary: Two destinations, fastest first
+                  value:
+                    source: '13.388860,52.517037'
+                    routes:
+                      - destination: '13.397634,52.529407'
+                        duration: 260.4
+                        distance: 1888
+                      - destination: '13.428555,52.523219'
+                        duration: 388.6
+                        distance: 3800.9
+                withUnroutable:
+                  summary: One destination no road reaches (Berlin → Svalbard)
+                  value:
+                    source: '13.388860,52.517037'
+                    routes:
+                      - destination: '13.397634,52.529407'
+                        duration: 260.4
+                        distance: 1888
+                    unroutable:
+                      - '15.6356,78.2232'
+        '400':
+          description: |
+            Invalid input. OSRM was not called. The message names the problem and,
+            for a bad coordinate or too many destinations, repeats the value received,
+            truncated to 50 characters.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                srcMissingOrRepeated:
+                  summary: src missing or sent more than once
+                  value:
+                    error: 'Exactly one "src" parameter is required'
+                srcInvalid:
+                  summary: src malformed or out of range
+                  value:
+                    error: 'Invalid "src" coordinate: 200.0,52.5'
+                dstMissing:
+                  summary: No dst
+                  value:
+                    error: 'At least one "dst" parameter is required'
+                dstTooMany:
+                  summary: More than 100 dst
+                  value:
+                    error: 'Too many "dst" parameters: 101 (max 100)'
+                dstInvalid:
+                  summary: A dst malformed, empty or out of range
+                  value:
+                    error: 'Invalid "dst" coordinate: abc,def'
+        '500':
+          description: |
+            OSRM rejected a request this service built (a bug on our side, logged as
+            an error), or something unexpected happened.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Internal server error
+        '502':
+          description: |
+            OSRM is unreachable (connection refused, DNS failure), answered 5xx again
+            after the retry, or sent a body without a usable route. Safe to retry.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Routing service unavailable
+        '503':
+          description: |
+            OSRM rate-limited this service (HTTP 429). Not retried internally, since
+            that would make the rate limit worse. Wait for `Retry-After` when present.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            Retry-After:
+              description: Passed through from OSRM; present only when OSRM sent it.
+              schema:
+                type: string
+              example: '30'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Routing service is busy, retry later
+        '504':
+          description: |
+            The 10 s request deadline passed before every destination was routed.
+            In-flight OSRM calls are aborted. Fewer destinations per request make
+            this less likely.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Routing service timed out
+
+  /health:
+    get:
+      tags: [Service]
+      operationId: getHealth
+      summary: Liveness check
+      description: Answers as long as the process is up. Never calls OSRM.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The process is up.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /:
+    get:
+      tags: [Service]
+      operationId: getServiceDescriptor
+      summary: Service descriptor
+      description: What this service is and where to go next.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Service name and entry points.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceDescriptor'
+
+components:
+  parameters:
+    Src:
+      name: src
+      in: query
+      required: true
+      description: Source coordinate, `longitude,latitude`. Exactly one.
+      schema:
+        $ref: '#/components/schemas/Coordinate'
+      example: '13.388860,52.517037'
+    Dst:
+      name: dst
+      in: query
+      required: true
+      description: |
+        Destination coordinate, `longitude,latitude`. Repeat the parameter for each
+        destination, 1 to 100 times. Duplicates are routed once.
+      style: form
+      explode: true
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 100
+        items:
+          $ref: '#/components/schemas/Coordinate'
+      example:
+        - '13.397634,52.529407'
+        - '13.428555,52.523219'
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: |
+        Your own id for this request, echoed back in the response header and written
+        to the logs. A value that does not match the pattern is replaced, not rejected.
+      schema:
+        type: string
+        pattern: '^[\w.-]{1,128}$'
+      example: checkout-7f3a
+
+  headers:
+    XRequestId:
+      description: The id of this request — yours if you sent a valid one, otherwise a UUID.
+      schema:
+        type: string
+      example: 3b1f6c2e-8a54-4c4e-9d61-2f7e0b9a1c55
+
+  schemas:
+    Coordinate:
+      type: string
+      description: |
+        `longitude,latitude` as plain decimals. Longitude −180…180, latitude −90…90.
+        Spaces around each number are allowed and trimmed.
+      # Shape only. A string pattern cannot express numeric bounds, so the
+      # longitude and latitude ranges above are enforced in code, not here.
+      pattern: '^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$'
+      examples:
+        - '13.388860,52.517037'
+
+    Route:
+      type: object
+      required: [destination, duration, distance]
+      additionalProperties: false
+      properties:
+        destination:
+          $ref: '#/components/schemas/Coordinate'
+        duration:
+          type: number
+          minimum: 0
+          description: Driving time in seconds, as OSRM reports it.
+          examples: [260.4]
+        distance:
+          type: number
+          minimum: 0
+          description: Driving distance in metres, as OSRM reports it. Often an integer.
+          examples: [1888]
+
+    RoutesResponse:
+      type: object
+      required: [source, routes]
+      additionalProperties: false
+      properties:
+        source:
+          $ref: '#/components/schemas/Coordinate'
+        routes:
+          type: array
+          description: One entry per routable destination, sorted by `duration`, then `distance`.
+          items:
+            $ref: '#/components/schemas/Route'
+        unroutable:
+          type: array
+          minItems: 1
+          description: |
+            Destinations no road connects to the source (OSRM `NoRoute` / `NoSegment`).
+            The key is present only when non-empty.
+          items:
+            $ref: '#/components/schemas/Coordinate'
+
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: Human-readable message. 5xx messages are fixed strings.
+
+    Health:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          const: ok
+
+    ServiceDescriptor:
+      type: object
+      required: [service, endpoints]
+      properties:
+        service:
+          type: string
+          const: ingrid-routes
+        endpoints:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            health: /health
+            routes: /routes?src=lng,lat&dst=lng,lat
+            docs: /docs
+            openapi: /openapi.json

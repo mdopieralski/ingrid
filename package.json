@@ -1,0 +1,53 @@
+{
+  "name": "ingrid",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp src/docs/openapi.yaml dist/docs/",
+    "cache:clean": "rm -rf node_modules && echo 'Caches cleared. Run pnpm install to reinstall.'",
+    "commitlint": "commitlint --edit",
+    "docs:lint": "pnpm --package=@redocly/cli@2.3.0 dlx redocly lint src/docs/openapi.yaml",
+    "prepare": "husky",
+    "standard": "pnpm standard:format && pnpm standard:lint",
+    "standard:fix": "pnpm standard:format:fix && pnpm standard:lint:fix",
+    "standard:format": "prettier --check --ignore-path .gitignore --ignore-path .prettierignore .",
+    "standard:format:fix": "prettier --write --ignore-path .gitignore --ignore-path .prettierignore .",
+    "standard:lint": "eslint .",
+    "standard:lint:fix": "eslint . --fix",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "start:dev": "portless run --name ingrid --lan -- node --experimental-strip-types --disable-warning=ExperimentalWarning --env-file-if-exists=.env --watch-path=./src --watch-preserve-output src/index.ts",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test \"test/**/*.test.ts\"",
+    "test:ci": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=junit.xml \"test/**/*.test.ts\"",
+    "test:integration": "OSRM_INTEGRATION=1 node --experimental-strip-types --disable-warning=ExperimentalWarning --test test/integration.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "swagger-ui-dist": "5.33.3",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "@types/swagger-ui-dist": "^3.30.6",
+    "ajv": "^8.20.0",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "portless": "^0.12.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
+  },
+  "engines": {
+    "node": "22.15.1"
+  },
+  "packageManager": "pnpm@10.22.0"
+}
