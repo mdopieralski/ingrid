@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
-  { ignores: ['node_modules/', 'dist/'] },
+  { ignores: ['node_modules/', 'dist/', '.vercel/'] },
   js.configs.recommended,
   // Type-aware rules: they read tsconfig.json, so they catch unhandled promises,
   // unsafe `any` and the like, not just syntax.

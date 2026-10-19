@@ -69,6 +69,19 @@ describe('F. API docs match the API', () => {
     }
   });
 
+  test('F2b /swagger-ui/ serves only the files the docs page loads', async (t) => {
+    const { app } = await setup(t, () => reply.ok());
+
+    for (const path of [
+      'index.html',
+      'package.json',
+      'swagger-initializer.js',
+      '..%2Fpackage.json',
+    ]) {
+      assert.equal((await app.get(`/swagger-ui/${path}`)).status, 404, path);
+    }
+  });
+
   test('F3 / and /health match their schemas', async (t) => {
     const { app } = await setup(t, () => reply.ok());
 
