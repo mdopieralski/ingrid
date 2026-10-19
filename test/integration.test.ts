@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, routesPath } from './helpers/app.js';
-import { SRC, DST_1, DST_2 } from './helpers/fixtures.js';
+import { startApp, routesPath } from './helpers/app.ts';
+import { SRC, DST_1, DST_2 } from './helpers/fixtures.ts';
 
 // The only test that talks to the real OSRM. Skipped by default so the suite
 // runs offline; run it with `pnpm test:integration`.
@@ -21,6 +21,7 @@ test(
     for (const route of body.routes) {
       assert.ok(route.duration > 0 && route.distance > 0);
     }
-    assert.ok(body.routes[0].duration <= body.routes[1].duration);
+    const [first, second] = body.routes;
+    assert.ok(first && second && first.duration <= second.duration);
   },
 );

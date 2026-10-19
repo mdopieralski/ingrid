@@ -1,16 +1,17 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, startApp, routesPath } from './helpers/app.js';
-import { unusedUrl } from './helpers/osrm-stub.js';
-import { reply, SRC, DST_1, DST_2 } from './helpers/fixtures.js';
+import { setup, startApp, routesPath } from './helpers/app.ts';
+import { unusedUrl, type StubHandler, type StubReply } from './helpers/osrm-stub.ts';
+import { fixture, reply, SRC, DST_1, DST_2 } from './helpers/fixtures.ts';
 
 const FAST = { attemptTimeoutMs: 100, requestTimeoutMs: 1000 };
 
 describe('C. Upstream behaviour', () => {
-  for (const [id, code, makeReply] of [
+  const unroutable: [id: string, code: string, makeReply: () => StubReply][] = [
     ['C1', 'NoRoute', reply.noRoute],
     ['C2', 'NoSegment', reply.noSegment],
-  ]) {
+  ];
+  for (const [id, code, makeReply] of unroutable) {
     test(`${id} ${code} (sent by OSRM as HTTP 400) is not a failure: 200, dst listed as unroutable`, async (t) => {
       const { app, osrm } = await setup(t, ({ dst }) => (dst === DST_2 ? makeReply() : reply.ok()));
 
@@ -26,14 +27,15 @@ describe('C. Upstream behaviour', () => {
     });
   }
 
-  for (const [code, makeReply] of [
+  const rejected: [code: string, makeReply: () => StubReply][] = [
     ['InvalidQuery', reply.invalidQuery],
     ['InvalidOptions', reply.invalidOptions],
     [
       'InvalidUrl',
       () => ({ status: 400, body: { code: 'InvalidUrl', message: 'URL string malformed' } }),
     ],
-  ]) {
+  ];
+  for (const [code, makeReply] of rejected) {
     test(`C3 ${code} is our bug: 500, logged as an error, generic message`, async (t) => {
       const { app } = await setup(t, makeReply);
 
@@ -42,8 +44,9 @@ describe('C. Upstream behaviour', () => {
       assert.equal(res.status, 500);
       assert.deepEqual(await res.json(), { error: 'Internal server error' });
       const logged = app.logs().find((l) => l.msg === 'upstream request failed');
+      assert.ok(logged);
       assert.equal(logged.level, 'error');
-      assert.match(logged.detail, new RegExp(code));
+      assert.match(logged.detail ?? '', new RegExp(code));
     });
   }
 
@@ -102,12 +105,13 @@ describe('C. Upstream behaviour', () => {
     assert.equal(res.status, 502);
   });
 
-  const okBody = reply.ok().body;
-  for (const [name, body] of [
+  const okBody = fixture('route-ok');
+  const malformed: [name: string, body: unknown][] = [
     ['malformed JSON', '{"code":"Ok","routes":[{'],
     ['routes: []', { ...okBody, routes: [] }],
     ['routes[0] without duration', { ...okBody, routes: [{ distance: 1888 }] }],
-  ]) {
+  ];
+  for (const [name, body] of malformed) {
     test(`C8 ${name} → 502, not retried`, async (t) => {
       const { app, osrm } = await setup(t, () => ({ status: 200, body }));
 
@@ -126,7 +130,7 @@ describe('C. Upstream behaviour', () => {
     const hanging = new Set(dsts.slice(3));
     const { app } = await setup(
       t,
-      ({ dst }) => (hanging.has(dst) ? { hang: true } : reply.ok()),
+      ({ dst }) => (hanging.has(dst ?? '') ? { hang: true } : reply.ok()),
       FAST,
     );
 
@@ -140,7 +144,7 @@ describe('C. Upstream behaviour', () => {
     const LEAK =
       /osrm|project-osrm|127\.0\.0\.1|localhost|https?:|\.js:\d+|\bat \S+ \(|RoutingError|Error:|InvalidQuery|ECONNREFUSED|HTTP \d/i;
 
-    const scenarios = [
+    const scenarios: [name: string, handler: StubHandler][] = [
       ['rejected (InvalidQuery)', () => reply.invalidQuery()],
       ['rate limited (429)', () => ({ status: 429 })],
       ['server error (503)', () => ({ status: 503, body: 'osrm-routed crashed at /srv/osrm' })],
@@ -156,7 +160,7 @@ describe('C. Upstream behaviour', () => {
         const text = await res.text();
 
         assert.ok(res.status >= 500);
-        assert.deepEqual(Object.keys(JSON.parse(text)), ['error']);
+        assert.deepEqual(Object.keys(JSON.parse(text) as object), ['error']);
         assert.doesNotMatch(text, LEAK);
         assert.equal(res.headers.get('x-powered-by'), null);
       });

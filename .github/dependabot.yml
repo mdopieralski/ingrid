@@ -13,6 +13,13 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # typescript-eslint supports TypeScript below 6.1. Lift this once it supports newer.
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
+      # @types/node follows the Node major in .nvmrc (22), not the latest Node.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       npm:
         patterns: ['*']

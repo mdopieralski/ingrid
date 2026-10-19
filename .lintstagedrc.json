@@ -1,5 +1,5 @@
 {
-  "**/*.{js,mjs,cjs}": [
+  "**/*.{ts,js,mjs,cjs}": [
     "prettier --write --ignore-path .gitignore --ignore-path .prettierignore",
     "eslint --fix"
   ],

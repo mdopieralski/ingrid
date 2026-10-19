@@ -1,9 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, routesPath } from './helpers/app.js';
-import { reply, okWith, SRC, DST_1, DST_2 } from './helpers/fixtures.js';
+import { setup, routesPath } from './helpers/app.ts';
+import { reply, okWith, SRC, DST_1, DST_2 } from './helpers/fixtures.ts';
+import type { StubReply } from './helpers/osrm-stub.ts';
 
-const D = ['13.401,52.521', '13.402,52.522', '13.403,52.523'];
+const D = ['13.401,52.521', '13.402,52.522', '13.403,52.523'] as const;
 
 describe('A. Contract & happy path', () => {
   test('A1 the brief’s request returns exactly the specified body', async (t) => {
@@ -12,7 +13,7 @@ describe('A. Contract & happy path', () => {
     const res = await app.get(routesPath(SRC, [DST_1, DST_2]));
 
     assert.equal(res.status, 200);
-    assert.match(res.headers.get('content-type'), /application\/json/);
+    assert.match(res.headers.get('content-type') ?? '', /application\/json/);
     assert.deepEqual(await res.json(), {
       source: SRC,
       routes: [
@@ -23,12 +24,12 @@ describe('A. Contract & happy path', () => {
   });
 
   test('A2 sorts by duration, not distance: the longer-but-faster route comes first', async (t) => {
-    const byDst = {
+    const byDst: Record<string, StubReply> = {
       [D[0]]: okWith({ duration: 300, distance: 1000 }), // nearest, slowest
       [D[1]]: okWith({ duration: 100, distance: 5000 }), // farthest, fastest
       [D[2]]: okWith({ duration: 200, distance: 3000 }),
     };
-    const { app } = await setup(t, ({ dst }) => byDst[dst]);
+    const { app } = await setup(t, ({ dst }) => byDst[dst ?? '']);
 
     const { routes } = await (await app.get(routesPath(SRC, D))).json();
 
@@ -39,11 +40,11 @@ describe('A. Contract & happy path', () => {
   });
 
   test('A3 equal durations are tie-broken by shorter distance', async (t) => {
-    const byDst = {
+    const byDst: Record<string, StubReply> = {
       [D[0]]: okWith({ duration: 200, distance: 3000 }),
       [D[1]]: okWith({ duration: 200, distance: 2000 }),
     };
-    const { app } = await setup(t, ({ dst }) => byDst[dst]);
+    const { app } = await setup(t, ({ dst }) => byDst[dst ?? '']);
 
     const { routes } = await (await app.get(routesPath(SRC, [D[0], D[1]]))).json();
 
@@ -65,12 +66,13 @@ describe('A. Contract & happy path', () => {
   test('A5 echoes the client’s coordinate, not the waypoint OSRM snapped to', async (t) => {
     const ok = reply.ok();
     // The real payload snaps 13.397634,52.529407 to 13.39763,52.529433.
-    assert.deepEqual(ok.body.waypoints[1].location, [13.39763, 52.529433]);
+    const { waypoints } = ok.body as { waypoints: { location: number[] }[] };
+    assert.deepEqual(waypoints[1]?.location, [13.39763, 52.529433]);
     const { app } = await setup(t, () => ok);
 
     const { routes } = await (await app.get(routesPath(SRC, [DST_1]))).json();
 
-    assert.equal(routes[0].destination, DST_1);
+    assert.equal(routes[0]?.destination, DST_1);
   });
 
   test('A6 a repeated dst is routed once and listed once', async (t) => {

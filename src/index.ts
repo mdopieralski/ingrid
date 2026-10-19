@@ -1,7 +1,7 @@
-import { createApp, DEFAULTS } from './app.js';
-import { createLogger } from './utils/logger.js';
+import { createApp, DEFAULTS } from './app.ts';
+import { createLogger } from './utils/logger.ts';
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 // Set by portless in `pnpm start:dev` (e.g. https://ingrid.local); plain localhost otherwise.
 const PUBLIC_URL = process.env.PORTLESS_URL || `http://localhost:${PORT}`;
 const logger = createLogger();

@@ -1,9 +1,9 @@
-import express from 'express';
+import express, { type ErrorRequestHandler, type Express, type RequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
-import { createDocsRouter } from './docs/docs.js';
-import { createRoutesRouter } from './routes/routes.js';
-import { createOsrmClient } from './services/osrm.js';
-import { createLogger } from './utils/logger.js';
+import { createDocsRouter } from './docs/docs.ts';
+import { createRoutesRouter } from './routes/routes.ts';
+import { createOsrmClient } from './services/osrm.ts';
+import { createLogger, type Logger } from './utils/logger.ts';
 
 export const DEFAULTS = {
   osrmUrl: 'http://router.project-osrm.org',
@@ -15,12 +15,45 @@ export const DEFAULTS = {
   maxDestinations: 100,
 };
 
+export type AppConfig = typeof DEFAULTS;
+export type AppOptions = Partial<AppConfig> & { logger?: Logger };
+
+// `outcome` on the request log line: what happened, in one word.
+export type Outcome =
+  | 'ok'
+  | 'invalid_input'
+  | 'upstream_timeout'
+  | 'upstream_rate_limited'
+  | 'upstream_unavailable'
+  | 'upstream_bad_response'
+  | 'upstream_rejected'
+  | 'client_cancelled'
+  | 'internal_error';
+
+// Fields handlers add to the request's log line.
+export interface RequestLog {
+  outcome?: Outcome;
+  destinationCount?: number;
+  upstreamLatencyMs?: number;
+  unroutableCount?: number;
+}
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- Express's own extension point
+  namespace Express {
+    interface Locals {
+      requestId: string;
+      log: RequestLog;
+    }
+  }
+}
+
 const REQUEST_ID = /^[\w.-]{1,128}$/;
 
 // Gives each request an id and writes one log line when the response closes.
 // Handlers add fields to res.locals.log. The query string is never logged,
 // because it holds customer coordinates.
-function requestContext(logger) {
+function requestContext(logger: Logger): RequestHandler {
   return (req, res, next) => {
     const incoming = req.get('x-request-id');
     const requestId = incoming && REQUEST_ID.test(incoming) ? incoming : randomUUID();
@@ -48,10 +81,10 @@ function requestContext(logger) {
   };
 }
 
-export function createApp(options = {}) {
-  const config = { ...DEFAULTS, ...options };
+export function createApp(options: AppOptions = {}): Express {
+  const { logger = createLogger(), ...overrides } = options;
+  const config: AppConfig = { ...DEFAULTS, ...overrides };
   config.osrmUrl = config.osrmUrl.replace(/\/+$/, '');
-  const logger = config.logger ?? createLogger();
   const osrm = createOsrmClient(config);
 
   const app = express();
@@ -59,7 +92,7 @@ export function createApp(options = {}) {
   app.use(requestContext(logger));
 
   // Service descriptor: what this service is and where to go next.
-  app.get('/', (req, res) => {
+  app.get('/', (_req, res) => {
     res.json({
       service: 'ingrid-routes',
       endpoints: {
@@ -71,18 +104,23 @@ export function createApp(options = {}) {
     });
   });
 
-  app.get('/health', (req, res) => {
+  app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
 
   app.use(createDocsRouter());
   app.use('/routes', createRoutesRouter({ ...config, osrm, logger }));
 
-  app.use((err, req, res, _next) => {
-    logger.error({ msg: 'unhandled error', requestId: res.locals.requestId, error: err.stack });
+  const onError: ErrorRequestHandler = (err: unknown, _req, res, _next) => {
+    logger.error({
+      msg: 'unhandled error',
+      requestId: res.locals.requestId,
+      error: err instanceof Error ? err.stack : String(err),
+    });
     res.locals.log.outcome = 'internal_error';
     res.status(500).json({ error: 'Internal server error' });
-  });
+  };
+  app.use(onError);
 
   return app;
 }

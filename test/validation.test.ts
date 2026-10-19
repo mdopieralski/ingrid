@@ -1,21 +1,23 @@
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { startApp, routesPath } from './helpers/app.js';
-import { startOsrmStub } from './helpers/osrm-stub.js';
-import { reply, SRC, DST_1 } from './helpers/fixtures.js';
+import { startApp, routesPath, type TestApp } from './helpers/app.ts';
+import { startOsrmStub, type OsrmStub } from './helpers/osrm-stub.ts';
+import { reply, SRC, DST_1 } from './helpers/fixtures.ts';
 
 // Every case checks two things: the 400, and that OSRM was never called.
 describe('B. Input validation — 400, and OSRM is never called', () => {
-  let osrm, app;
+  let osrm: OsrmStub;
+  let app: TestApp;
   before(async () => {
     osrm = await startOsrmStub(() => reply.ok());
     app = await startApp({ osrmUrl: osrm.url, maxDestinations: 100 });
   });
   after(() => Promise.all([app.close(), osrm.close()]));
 
-  const many = (n) => Array.from({ length: n }, (_, i) => `13.${String(i).padStart(4, '0')},52.5`);
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => `13.${String(i).padStart(4, '0')},52.5`);
 
-  const cases = [
+  const cases: [name: string, path: string, message: RegExp][] = [
     ['B1 src missing', routesPath(undefined, [DST_1]), /"src"/],
     ['B2 src supplied twice', `/routes?src=${SRC}&src=${SRC}&dst=${DST_1}`, /Exactly one "src"/],
     ['B3 no dst at all', routesPath(SRC, []), /"dst"/],
@@ -55,6 +57,6 @@ describe('B. Input validation — 400, and OSRM is never called', () => {
     const res = await app.get(routesPath('52.517037,13.388860', [DST_1]));
 
     assert.equal(res.status, 200);
-    assert.equal(osrm.calls.at(-1).src, '52.517037,13.388860');
+    assert.equal(osrm.calls.at(-1)?.src, '52.517037,13.388860');
   });
 });

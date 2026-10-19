@@ -1,8 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { setup, routesPath } from './helpers/app.js';
-import { reply, okWith, SRC, DST_1, DST_2 } from './helpers/fixtures.js';
+import { setup, routesPath } from './helpers/app.ts';
+import { reply, okWith, SRC, DST_1, DST_2 } from './helpers/fixtures.ts';
 
 describe('D. Resilience', () => {
   test('D1 a single 500 is retried exactly once and the request succeeds', async (t) => {

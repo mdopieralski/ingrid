@@ -1,8 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { setup, routesPath } from './helpers/app.js';
-import { reply, SRC, DST_1, DST_2 } from './helpers/fixtures.js';
+import { setup, routesPath } from './helpers/app.ts';
+import { reply, SRC, DST_1, DST_2 } from './helpers/fixtures.ts';
 
 describe('E. Operational surface', () => {
   test('E1 GET /health answers 200 without touching OSRM', async (t) => {
@@ -47,7 +47,8 @@ describe('E. Operational surface', () => {
     const body = await res.text();
 
     const logged = app.logs().find((l) => l.msg === 'upstream request failed');
-    assert.match(logged.detail, /HTTP 503/);
+    assert.ok(logged);
+    assert.match(logged.detail ?? '', /HTTP 503/);
     assert.equal(logged.requestId, res.headers.get('x-request-id'));
     assert.doesNotMatch(body, /503/);
     assert.equal((await app.requestLog()).outcome, 'upstream_unavailable');
@@ -78,7 +79,7 @@ describe('E. Operational surface', () => {
     await sleep(100);
 
     assert.equal(osrm.calls.length, 1);
-    assert.equal(osrm.calls[0].aborted, true);
+    assert.equal(osrm.calls[0]?.aborted, true);
     assert.equal((await app.requestLog()).outcome, 'client_cancelled');
   });
 });

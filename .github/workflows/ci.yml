@@ -39,6 +39,40 @@ jobs:
   # The spec linter is fetched from the registry at a pinned version instead of
   # being carried in the lockfile: it is a large CLI used by exactly one script.
   # That is a deliberate trade-off, and the only step here that reaches out.
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  # Compiles src/ to dist/, then starts the compiled server and calls it. That
+  # catches what type-checking cannot: a file missing from dist/ (openapi.yaml)
+  # or an import path that only works when running the .ts sources.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: pnpm build
+      - name: Smoke-test the build
+        run: |
+          PORT=3000 node dist/index.js &
+          for _ in $(seq 1 20); do
+            if curl -fsS http://localhost:3000/health; then
+              curl -fsS -o /dev/null http://localhost:3000/openapi.json
+              curl -fsS -o /dev/null http://localhost:3000/docs
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "the built server did not answer on /health"
+          exit 1
+
   openapi:
     name: OpenAPI spec
     runs-on: ubuntu-latest
@@ -89,7 +123,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [format, lint, openapi, test, commits]
+    needs: [format, lint, typecheck, build, openapi, test, commits]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
