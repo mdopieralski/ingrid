@@ -3,3 +3,5 @@ node_modules
 .env.local
 junit.xml
 dist
+public/swagger-ui
+.vercel

@@ -55,6 +55,7 @@ Full reset: `pnpm cache:clean && pnpm install && pnpm start:dev`.
    - [Behaviour decisions](#behaviour-decisions)
    - [Scripts](#scripts)
    - [Environment](#environment)
+   - [Deployment (Vercel)](#deployment-vercel)
 4. [Testing](#testing)
    - [CI](#ci)
    - [Not tested](#not-tested)
@@ -93,14 +94,14 @@ TypeScript is pinned to `~6.0`: typescript-eslint, which runs the type-aware lin
 
 Single Express 5 app. Routes validate input and shape the response; anything that talks to the outside world lives in `src/services`; small pure helpers live in `src/utils`.
 
-`index.ts` only starts the process; `app.ts` exports `createApp(options)`, so tests boot the whole app on a random port with injected config and no process-level state.
+`index.ts` only starts the process; `create-app.ts` exports `createApp(options)`, so tests boot the whole app on a random port with injected config and no process-level state.
 
 ### Structure
 
 ```
 src/
-  index.ts               — process entry: reads env, starts the server
-  app.ts                 — composition root: config, request context, routes, error handler
+  index.ts               — process entry: reads env, starts the server; also Vercel's entry
+  create-app.ts          — composition root: config, request context, routes, error handler
   routes/routes.ts       — GET /routes: validation, fan-out, sorting, RoutingError → status
   services/osrm.ts       — OSRM client: error taxonomy, retries, 4 s per attempt
   utils/coordinates.ts   — "lng,lat" parsing and range checks
@@ -121,7 +122,14 @@ test/
   fixtures/              — real OSRM payloads
   helpers/               — app and OSRM-stub boot
 
+scripts/
+  build-static.ts        — copies Swagger UI files to public/swagger-ui/ (run by `pnpm build`)
+  vercel-check.sh        — `pnpm vercel:check`: Vercel's build, run and checked locally
+
 dist/                    — `pnpm build` output (git-ignored)
+public/swagger-ui/       — Swagger UI files for Vercel's CDN, written by `pnpm build` (git-ignored)
+
+.npmrc                   — hoists undici-types, which Vercel's TypeScript check needs
 
 tsconfig.json            — type-check settings for src/ and test/ (no output)
 tsconfig.build.json      — build settings: src/ → dist/
@@ -130,7 +138,7 @@ docs/
   RELEASE_MANAGER.md     — branch flow (feature → scope → release → main) and release checklist
 
 .github/
-  workflows/ci.yml          — Prettier, ESLint, typecheck, build, spec lint, tests, commit messages
+  workflows/ci.yml          — Prettier, ESLint, typecheck, build, Vercel build, spec lint, tests, commits
   workflows/integration.yml — the live OSRM test, daily and on demand
   actions/setup/            — shared step: pnpm, Node from .nvmrc, cached install
   dependabot.yml            — weekly grouped updates for npm and actions
@@ -229,22 +237,23 @@ Every response carries `X-Request-Id` (the caller's own, if sent).
 
 Everyday commands from `package.json` — `pnpm run` is authoritative.
 
-| Name                                      | Description                                                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `start:dev`                               | Dev server at `https://ingrid.local` (API) and `/docs` (Swagger) via Portless; restarts on any change under `src/` |
-| `build`                                   | Compile `src/` to `dist/` with `tsc` and copy `openapi.yaml` next to the compiled docs module                      |
-| `start`                                   | Production start: `node dist/index.js` (run `build` first), `.env` loaded, no watch — `http://localhost:3000`      |
-| `typecheck`                               | `tsc --noEmit` over `src/` and `test/`; Node's type stripping does not check types, this does                      |
-| `test`                                    | Every test file, offline, against a local OSRM stub; the integration test is skipped                               |
-| `test:ci`                                 | Same tests as `test`, printing readable output and writing JUnit results to `junit.xml` (used by CI)               |
-| `test:integration`                        | The one test that calls the real OSRM (`OSRM_URL` or the public demo server)                                       |
-| `cache:clean`                             | Remove `node_modules`; run `pnpm install` afterwards                                                               |
-| `standard` / `standard:fix`               | Prettier + ESLint — check or apply                                                                                 |
-| `standard:format` / `standard:format:fix` | Prettier only — check or apply                                                                                     |
-| `standard:lint` / `standard:lint:fix`     | ESLint (with type-aware typescript-eslint rules) only — check or apply                                             |
-| `docs:lint`                               | Lint `src/docs/openapi.yaml` with Redocly (rules in `redocly.yaml`)                                                |
-| `commitlint`                              | Lint the commit message (run by the `commit-msg` hook)                                                             |
-| `prepare`                                 | Install the Husky git hooks (runs automatically on `pnpm install`)                                                 |
+| Name                                      | Description                                                                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `start:dev`                               | Dev server at `https://ingrid.local` (API) and `/docs` (Swagger) via Portless; restarts on any change under `src/`  |
+| `build`                                   | Compile `src/` to `dist/` with `tsc`, copy `openapi.yaml` next to it, copy Swagger UI files to `public/swagger-ui/` |
+| `start`                                   | Production start: `node dist/index.js` (run `build` first), `.env` loaded, no watch — `http://localhost:3000`       |
+| `vercel:check`                            | Run Vercel's own build locally (no account needed), check the bundle, start it and call it                          |
+| `typecheck`                               | `tsc --noEmit` over `src/` and `test/`; Node's type stripping does not check types, this does                       |
+| `test`                                    | Every test file, offline, against a local OSRM stub; the integration test is skipped                                |
+| `test:ci`                                 | Same tests as `test`, printing readable output and writing JUnit results to `junit.xml` (used by CI)                |
+| `test:integration`                        | The one test that calls the real OSRM (`OSRM_URL` or the public demo server)                                        |
+| `cache:clean`                             | Remove `node_modules`; run `pnpm install` afterwards                                                                |
+| `standard` / `standard:fix`               | Prettier + ESLint — check or apply                                                                                  |
+| `standard:format` / `standard:format:fix` | Prettier only — check or apply                                                                                      |
+| `standard:lint` / `standard:lint:fix`     | ESLint (with type-aware typescript-eslint rules) only — check or apply                                              |
+| `docs:lint`                               | Lint `src/docs/openapi.yaml` with Redocly (rules in `redocly.yaml`)                                                 |
+| `commitlint`                              | Lint the commit message (run by the `commit-msg` hook)                                                              |
+| `prepare`                                 | Install the Husky git hooks (runs automatically on `pnpm install`)                                                  |
 
 Git hooks (Husky) run on every commit and push:
 
@@ -262,6 +271,29 @@ Copy `.env.example` → `.env`. Both `start` and `start:dev` load it if present 
   - `PORT` — optional; default `3000`. Ignored under `start:dev`: Portless sets it, and a variable already set wins over `.env`
 - Routing
   - `OSRM_URL` — optional; default `http://router.project-osrm.org` (no trailing slash)
+
+---
+
+### Deployment (Vercel)
+
+The project deploys to Vercel with its zero-config **Express** preset, through the Git integration: every push gets a preview deployment, and `main` deploys to production. Vercel runs `pnpm build`, then type-checks and bundles `src/index.ts` itself into one function. Static files come from `public/`.
+
+Vercel's build is not the same as ours, so a few things exist only for it:
+
+- **Entry file.** Vercel takes the first of `app.*`, `index.*`, `server.*`, `src/app.*`, `src/index.*`, `src/server.*` that contains an import from `'express'`. That is why the app factory lives in `src/create-app.ts`, not `src/app.ts`: under that name Vercel picked the factory, which never starts a server. `src/index.ts` keeps an `import type { Express } from 'express'` so that it qualifies, and it calls `listen()`, which Vercel supports.
+- **Type-check.** Vercel type-checks with its own TypeScript setup, which does not follow pnpm's symlinks. Without `.npmrc` hoisting `undici-types` into the top-level `node_modules`, it sees an empty global `Response` type and fails with `Property 'status' does not exist on type 'Response'`, even though `pnpm typecheck` passes.
+- **Bundled files.** Vercel keeps only the files it can trace. `openapi.yaml` and `package.json` are read with a literal `new URL('./…', import.meta.url)` in `src/docs/docs.ts`, the pattern its tracer follows. Passing the path through a variable drops the file from the bundle, and the function then fails at startup.
+- **Static files.** Vercel ignores `express.static()`, so `pnpm build` copies the Swagger UI files that `/docs` loads into `public/swagger-ui/`. Locally they are still served from `node_modules`.
+- **Node version.** `engines.node` is a range (`>=22.15.1 <23`), because Vercel can only select a major version. `.nvmrc` pins the exact local version.
+
+`pnpm vercel:check` runs Vercel's own build (`vercel build`, pinned CLI version, no account or token) and fails if:
+
+- the entry is not `src/index.js`;
+- `openapi.yaml` is missing from the bundle;
+- the Swagger UI files are missing from the static output;
+- the bundled function does not start and answer `/health`, `/openapi.json` and `/docs`.
+
+CI runs it as the `Vercel build` job, so a change that would break the deployment fails on the PR, not on Vercel.
 
 ---
 
@@ -295,6 +327,7 @@ The Husky hooks run these checks locally, but a hook can be skipped with `--no-v
 | `ESLint`          | `pnpm standard:lint`                         | errors are annotated inline on the PR diff                     |
 | `Typecheck`       | `pnpm typecheck`                             |                                                                |
 | `Build`           | `pnpm build`, then start `dist/` and call it | catches what type-checking cannot: a file missing from `dist/` |
+| `Vercel build`    | `pnpm vercel:check`                          | Vercel's own build, bundle checks, then calls the function     |
 | `OpenAPI spec`    | `pnpm docs:lint`                             |                                                                |
 | `Tests`           | `pnpm test:ci`                               | JUnit report kept as the `junit-report` artifact, 14 days      |
 | `Commit messages` | `commitlint` over the PR's commits           | PRs only; skipped for Dependabot                               |
@@ -317,7 +350,7 @@ The Husky hooks run these checks locally, but a hook can be skipped with `--no-v
 - **Self-hosted OSRM:** the demo server is not for production. Running our own means building the graph from an OSM extract (hours and tens of GB of RAM for Europe), re-running that on every map refresh, and running ≥2 instances behind a load balancer.
 - **Observability stack:** counters worth exporting — requests by `outcome`, upstream latency histogram, upstream attempts and retries, unroutable count. The log lines carry these fields today; nothing collects them.
 - **Client cancellation:** supported. A client disconnect aborts in-flight OSRM calls and stops new attempts (test E5), so a dropped request does not keep using the shared rate limit.
-- **Continuous delivery:** CI verifies every push; there is no deploy step. The same workflow would build a container image, push it to a registry on a tagged commit and roll out behind a health check — `/health` is already the probe it would use.
+- **Continuous delivery:** Vercel's Git integration deploys every push (previews) and `main` (production), see [Deployment](#deployment-vercel). CI proves the Vercel build works but does not deploy, and nothing checks the deployed URL afterwards. A post-deploy smoke test against `/health` and one `/routes` request would close that gap.
 - **Authentication and rate limiting:** none. The service is public, has no API key and no request budget of its own, while a single request fans out to as many as 100 upstream calls. The cap of 5 concurrent OSRM calls is per request, so it does nothing against 100 concurrent callers: one abusive client can exhaust the shared OSRM quota for everyone else. In production: an API key or mTLS at the gateway, a per-client request budget, and a global in-flight cap on OSRM calls rather than a per-request one.
 - **Docs served by the service:** the API docs come from the app itself, so `swagger-ui-dist` is a production dependency and a few megabytes of static assets ship with the service, publicly. In production the docs would sit behind a flag or on a separate host, with the spec published from CI instead of served by the API.
 - **`/ready`:** not implemented. `/health` is liveness only and never calls OSRM; a readiness check that does would need its own short timeout and caching so probes do not use up the rate limit.
