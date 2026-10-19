@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { TestContext } from 'node:test';
 import { once } from 'node:events';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createApp, type AppOptions } from '../../src/app.ts';
+import { createApp, type AppOptions } from '../../src/create-app.ts';
 import { createLogger } from '../../src/utils/logger.ts';
 import { closeServer, startOsrmStub, type OsrmStub, type StubHandler } from './osrm-stub.ts';
 

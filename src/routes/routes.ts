@@ -8,7 +8,7 @@ import {
   type RoutingErrorKind,
 } from '../services/osrm.ts';
 import type { Logger } from '../utils/logger.ts';
-import type { Outcome } from '../app.ts';
+import type { Outcome } from '../create-app.ts';
 
 // RoutingError kind → status, client message and log outcome.
 // Client messages are fixed strings so upstream detail never leaks.

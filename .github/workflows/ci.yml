@@ -73,6 +73,19 @@ jobs:
           echo "the built server did not answer on /health"
           exit 1
 
+  # Runs Vercel's own build (no Vercel account needed), checks the function it
+  # produces, then starts that function and calls it. Vercel type-checks,
+  # picks the entry file and bundles files its own way; this job is where a
+  # change that would break the deployment fails, before it reaches Vercel.
+  vercel:
+    name: Vercel build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: pnpm vercel:check
+
   openapi:
     name: OpenAPI spec
     runs-on: ubuntu-latest
@@ -123,7 +136,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [format, lint, typecheck, build, openapi, test, commits]
+    needs: [format, lint, typecheck, build, vercel, openapi, test, commits]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
