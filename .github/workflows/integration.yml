@@ -1,0 +1,34 @@
+name: Integration
+
+# The one test against the real OSRM. It is kept out of CI so a PR never fails
+# because the shared demo server is slow or rate-limiting. Run daily, it still
+# catches OSRM changing its contract. GitHub emails the workflow's owner when a
+# scheduled run fails.
+on:
+  schedule:
+    - cron: '17 6 * * *' # daily, off the hour to avoid the top-of-hour rush
+  workflow_dispatch:
+    inputs:
+      osrm_url:
+        description: OSRM base URL (empty = the public demo server)
+        required: false
+        default: ''
+
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-osrm:
+    name: Live OSRM
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: pnpm test:integration
+        env:
+          OSRM_URL: ${{ inputs.osrm_url }}

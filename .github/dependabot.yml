@@ -1,0 +1,33 @@
+version: 2
+
+# Weekly, grouped into one PR per ecosystem, and only for releases at least a
+# week old, so a compromised or broken release has time to be pulled first.
+# Commit messages follow Conventional Commits, as commitlint requires.
+updates:
+  - package-ecosystem: npm # also reads pnpm-lock.yaml
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  # Keeps the SHA-pinned actions current; the "# vX.Y.Z" comments are updated too.
+  - package-ecosystem: github-actions
+    directories: [/, /.github/actions/*]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ['*']
