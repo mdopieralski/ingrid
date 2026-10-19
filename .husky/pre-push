@@ -1,0 +1,5 @@
+# Fast local safety net: Prettier + ESLint over the whole repo, so a
+# formatting or lint error fails the push in seconds.
+# Skip with `git push --no-verify` when you've checked manually.
+
+pnpm standard
